@@ -1,0 +1,49 @@
+[package]
+name = "predictterm"
+version = "0.1.0"
+edition = "2021"
+authors = ["PredictTerm Team"]
+description = "GPUI-based Intelligent Predictive Terminal"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Async & Concurrency
+tokio = { version = "1.40", features = ["full"] }
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+
+# Terminal & PTY
+portable-pty = "0.8"
+vte = "0.14"
+bitflags = { version = "2.6", features = ["serde"] }
+
+# Database & Storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Serialization & Config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+directories = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Matching & Regex
+fuzzy-matcher = "0.3"
+regex = "1.10"
+
+# Optional GPUI (enabled for GUI target)
+gpui = { version = "0.2", optional = true }
+
+[features]
+default = []
+gui = ["dep:gpui"]
+
+[[bin]]
+name = "predictterm"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3.12"

@@ -109,5 +109,5 @@ jobs:
         with:
           files: artifacts/*
           draft: false
-          prerelease: false
+          prerelease: true
           generate_release_notes: true

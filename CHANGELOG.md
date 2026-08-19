@@ -7,15 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.1.1] - 2026-08-19 (Pre-release)
 
-### Added
+### Fixed & Enhanced
 - **Windows Shell Resolver (`src/shell/`)**:
   - Implemented secure Windows shell resolution with absolute path discovery (`pwsh.exe`, `powershell.exe`, `cmd.exe`, `bash.exe`).
   - Added essential Windows environment variable enforcement (`SystemRoot`, `WINDIR`, `SystemDrive`, `ComSpec`, `PATH`) to prevent `0xc0000142` (`STATUS_DLL_INIT_FAILED`) DLL initialization crashes.
   - Added multi-tier automatic fallback when primary shell cannot be spawned.
 - **Enhanced Diagnostics (`predictterm doctor`)**:
   - Added diagnostic checks for Windows environment variables and available shell binaries.
+- **CI/CD Optimization**:
+  - Optimized macOS Intel build runner to fast Apple Silicon `macos-14` cross-compilation.
+  - Configured GitHub Releases to publish as Pre-release.
 
 ---
 

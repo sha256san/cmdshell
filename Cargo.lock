@@ -4076,7 +4076,7 @@ dependencies = [
 
 [[package]]
 name = "predictterm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags 2.13.1",
  "chrono",

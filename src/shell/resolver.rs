@@ -33,14 +33,19 @@ impl ShellResolver {
         }
 
         // 2. OS-specific discovery
-        #[cfg(windows)]
+        #[cfg(target_os = "windows")]
         {
             candidates.extend(crate::shell::windows::discover_windows_shells());
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         {
-            candidates.extend(crate::shell::unix::discover_unix_shells());
+            candidates.extend(crate::shell::macos::discover_macos_shells());
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            candidates.extend(crate::shell::linux::discover_linux_shells());
         }
 
         candidates
@@ -85,7 +90,7 @@ impl ShellResolver {
         }
 
         // Ultimate fallback
-        #[cfg(windows)]
+        #[cfg(target_os = "windows")]
         {
             let system_root = crate::shell::windows::get_system_root();
             ShellInfo {
@@ -97,7 +102,7 @@ impl ShellResolver {
             }
         }
 
-        #[cfg(not(windows))]
+        #[cfg(not(target_os = "windows"))]
         {
             ShellInfo {
                 name: "POSIX Shell (Emergency Fallback)".to_string(),

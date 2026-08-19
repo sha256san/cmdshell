@@ -1,9 +1,8 @@
 pub mod environment;
 pub mod health;
+pub mod linux;
+pub mod macos;
 pub mod resolver;
-#[cfg(not(windows))]
-pub mod unix;
-#[cfg(windows)]
 pub mod windows;
 
 use std::path::PathBuf;

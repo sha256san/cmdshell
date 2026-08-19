@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.6] - 2026-08-19 (Pre-release)
+
+### Added & Re-architected
+- **Native GUI & Multi-Platform Architecture (`src/platform/` & `src/shell/`)**:
+  - Implemented cross-platform abstraction layer (`PlatformIntegration`) supporting Windows (Win32/ConPTY), macOS (Cocoa/POSIX PTY), and Linux (Wayland/X11).
+  - Added dedicated OS-level shell resolvers for macOS (`src/shell/macos.rs`) and Linux (`src/shell/linux.rs`).
+  - Structured application core toward GPUI Native Terminal Application following Zed architectural principles as detailed in `planadd4.md`.
+
+---
+
 ## [0.1.5] - 2026-08-19 (Pre-release)
 
 ### Added & Enhanced

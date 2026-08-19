@@ -116,4 +116,23 @@ pub fn sanitize_windows_environment(cmd: &mut CommandBuilder) {
 - [ ] **Task 2**: `PtyBackend::spawn` に環境変数補正と起動失敗時のフォールバック処理を統合
 - [ ] **Task 3**: `tests/shell_tests.rs` でシェル検出および環境変数補正のテストケースを追加
 - [ ] **Task 4**: `doctor` サブコマンドに Windows 固有の環境変数・シェル整合性診断を追加
-- [ ] **Task 5**: 全テストの実行と GitHub Actions でのマルチプラットフォーム検証
+---
+
+## 6. GitHub Actions CI/CD Windows ビルド (0xc0000142 / exit code 1) トラブルシューティング
+
+### 6.1 現象
+GitHub Actions における `Build (x86_64-pc-windows-msvc)` ジョブが `exit code 1` で失敗。
+
+### 6.2 根本原因の特定
+1. **`test_windows_essential_env_injection` のアサーション失敗**:
+   - `src/shell/windows.rs` の `ensure_essential_windows_env` 内で `if std::env::var_os("SystemDrive").is_none()` という条件判定を行っていた。
+   - Linux ランナー上では `SystemDrive` / `ComSpec` が未設定のためブロックが実行されテストが通過していたが、実機 Windows ランナー上では既に環境変数が存在するため `is_none()` が false となり、`env_setter` が呼び出されなかった。
+   - その結果、`tests/shell_tests.rs` の `assert!(map.contains_key("SystemDrive"))` が Windows 上で panic を引き起こしていた。
+
+2. **PowerShell `Compress-Archive` の上書き競合**:
+   - `Compress-Archive` において `-Force` オプションが不足しており、アーティファクト生成時の例外要因となっていた。
+
+### 6.3 適用した修正
+- `ensure_essential_windows_env` を改修し、環境変数の有無に関わらず安全な値（既存値またはフォールバック）を確実にセットするよう修正。
+- `Compress-Archive` に `-Force` フラグを追加。
+- バージョンを `0.1.2` (Pre-release) にインクリメント。

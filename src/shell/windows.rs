@@ -73,29 +73,32 @@ pub fn ensure_essential_windows_env(env_setter: &mut dyn FnMut(&str, &str)) {
     env_setter("WINDIR", &sys_root_str);
 
     // 2. SystemDrive
-    if std::env::var_os("SystemDrive").is_none() {
-        let drive = system_root
+    let drive = std::env::var("SystemDrive").unwrap_or_else(|_| {
+        system_root
             .components()
             .next()
             .and_then(|c| c.as_os_str().to_str())
-            .unwrap_or("C:");
-        env_setter("SystemDrive", drive);
-    }
+            .unwrap_or("C:")
+            .to_string()
+    });
+    env_setter("SystemDrive", &drive);
 
     // 3. ComSpec
-    if std::env::var_os("ComSpec").is_none() {
-        let comspec = system_root.join("System32").join("cmd.exe");
-        env_setter("ComSpec", &comspec.to_string_lossy());
-    }
+    let comspec = std::env::var("ComSpec").unwrap_or_else(|_| {
+        system_root
+            .join("System32")
+            .join("cmd.exe")
+            .to_string_lossy()
+            .to_string()
+    });
+    env_setter("ComSpec", &comspec);
 
     // 4. PATH sanity check
-    if let Some(path_val) = std::env::var_os("PATH") {
-        env_setter("PATH", &path_val.to_string_lossy());
-    } else {
-        let default_path = format!(
+    let path = std::env::var("PATH").unwrap_or_else(|_| {
+        format!(
             "{}\\System32;{}\\System32\\WindowsPowerShell\\v1.0;{}",
             sys_root_str, sys_root_str, sys_root_str
-        );
-        env_setter("PATH", &default_path);
-    }
+        )
+    });
+    env_setter("PATH", &path);
 }

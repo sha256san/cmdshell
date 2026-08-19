@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.2] - 2026-08-19 (Pre-release)
+
+### Fixed
+- **Windows Environment Injection & Test Assertion**:
+  - Fixed `ensure_essential_windows_env` to unconditionally inject all essential variables (`SystemRoot`, `WINDIR`, `SystemDrive`, `ComSpec`, `PATH`), preventing assertion failures on native Windows runners.
+  - Added `-Force` flag to PowerShell `Compress-Archive` in GitHub Actions packaging step to avoid archive creation collision.
+
+---
+
 ## [0.1.1] - 2026-08-19 (Pre-release)
 
 ### Fixed & Enhanced

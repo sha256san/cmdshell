@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand};
 use predictterm::app::state::AppState;
 use predictterm::config::settings::Config;
 use predictterm::database::history::HistoryDb;
+use predictterm::shell::health::HealthStatus;
+use predictterm::shell::ShellResolver;
 use predictterm::terminal::session::TerminalSession;
 
 #[derive(Parser, Debug)]
@@ -76,6 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Commands::Doctor => {
             println!("🩺 PredictTerm Doctor Diagnostic Report");
             println!("=======================================");
+            println!("• Operating System: {} ({})", std::env::consts::OS, std::env::consts::ARCH);
             println!("• Configuration Path: {}", Config::config_file_path().display());
             println!("• Configuration Loaded: {}", if Config::config_file_path().exists() { "✅ Yes" } else { "ℹ️ Default" });
             println!("• History Database: {}", HistoryDb::default_db_path().display());
@@ -85,12 +88,25 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Err(e) => println!("• SQLite Engine: ❌ Error ({})", e),
             }
 
-            let (active_shell_name, active_shell_path) = predictterm::shell::ShellResolver::get_default_shell(config.terminal.shell.as_deref());
-            println!("• Default Shell: {} ({})", active_shell_name, active_shell_path.display());
-            println!("• Available Shells:");
-            for sh in predictterm::shell::ShellResolver::resolve_shell(config.terminal.shell.as_deref()) {
-                println!("  - {}: {} ({})", sh.name, sh.path.display(), if sh.is_available { "✅ Ready" } else { "❌ Missing" });
+            println!("\n🔍 Shell Health Diagnostics:");
+            let shell_results = ShellResolver::resolve_with_health_check(config.terminal.shell.as_deref());
+            for (sh, status) in &shell_results {
+                match status {
+                    HealthStatus::Healthy => {
+                        println!("  ✅ {:<35} | Path: {:<35} [PASS]", sh.name, sh.path.display());
+                    }
+                    HealthStatus::Failed { error_message, is_0xc0000142, exit_code } => {
+                        let err_type = if *is_0xc0000142 { " (0xc0000142 DLL Init Error)" } else { "" };
+                        println!(
+                            "  ❌ {:<35} | Path: {:<35} [FAIL: {}{}] Code: {:?}",
+                            sh.name, sh.path.display(), error_message, err_type, exit_code
+                        );
+                    }
+                }
             }
+
+            let best_shell = ShellResolver::get_best_shell(config.terminal.shell.as_deref());
+            println!("\n⭐ Recommended Active Shell: {} ({})", best_shell.name, best_shell.path.display());
 
             let git_check = std::process::Command::new("git").arg("--version").output();
             match git_check {

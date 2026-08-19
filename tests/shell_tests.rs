@@ -1,30 +1,38 @@
-use predictterm::shell::windows::{ensure_essential_windows_env, get_system_root};
+use predictterm::shell::environment::EnvironmentBuilder;
+use predictterm::shell::health::ShellHealthChecker;
 use predictterm::shell::ShellResolver;
-use std::collections::HashMap;
 
 #[test]
 fn test_shell_resolver_default() {
-    let (name, path) = ShellResolver::get_default_shell(None);
-    assert!(!name.is_empty());
-    assert!(!path.to_string_lossy().is_empty());
+    let shell = ShellResolver::get_best_shell(None);
+    assert!(!shell.name.is_empty());
+    assert!(!shell.path.to_string_lossy().is_empty());
 }
 
 #[test]
-fn test_windows_essential_env_injection() {
-    let mut map = HashMap::new();
-    ensure_essential_windows_env(&mut |k, v| {
-        map.insert(k.to_string(), v.to_string());
-    });
+fn test_environment_builder_contains_essentials() {
+    let envs = EnvironmentBuilder::build_shell_environment(None);
+    assert!(envs.contains_key("PATH"));
+    
+    #[cfg(windows)]
+    {
+        assert!(envs.contains_key("SystemRoot"));
+        assert!(envs.contains_key("WINDIR"));
+        assert!(envs.contains_key("SystemDrive"));
+        assert!(envs.contains_key("ComSpec"));
+    }
 
-    assert!(map.contains_key("SystemRoot"));
-    assert!(map.contains_key("WINDIR"));
-    assert!(map.contains_key("SystemDrive"));
-    assert!(map.contains_key("ComSpec"));
-    assert!(map.contains_key("PATH"));
+    #[cfg(not(windows))]
+    {
+        assert!(envs.contains_key("TERM"));
+    }
 }
 
 #[test]
-fn test_get_system_root() {
-    let root = get_system_root();
-    assert!(!root.to_string_lossy().is_empty());
+fn test_shell_health_checker_on_best_shell() {
+    let best_shell = ShellResolver::get_best_shell(None);
+    if best_shell.is_available {
+        let health = ShellHealthChecker::check(&best_shell);
+        assert!(health.is_healthy(), "Best shell should pass health check probe: {:?}", health);
+    }
 }

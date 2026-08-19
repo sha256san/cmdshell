@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.4] - 2026-08-19 (Pre-release)
+
+### Added & Fixed
+- **Architectural Shell Spawning & Health Check (`src/shell/`)**:
+  - Implemented `EnvironmentBuilder` with complete environment normalization, PATH deduplication, and Windows core paths priority.
+  - Implemented `ShellHealthChecker` that performs fast dry-run health probes on candidate shells (`pwsh`, `powershell`, `cmd`, `bash`) before launching PTY.
+  - Added specific detection for `0xc0000142` (`STATUS_DLL_INIT_FAILED`) to automatically bypass failing shells and fall back to healthy alternatives without OS popups.
+  - Added `-NoLogo` and `-NoProfile` arguments to PowerShell launches to prevent user profile CLR corruptions.
+  - Enhanced `predictterm doctor` with interactive per-shell health diagnostic reports.
+
+---
+
 ## [0.1.3] - 2026-08-19 (Pre-release)
 
 ### Added

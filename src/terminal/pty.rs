@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
-use crate::shell::ShellResolver;
+use crate::shell::{EnvironmentBuilder, ShellResolver};
 
 pub struct PtyBackend {
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
@@ -29,29 +29,33 @@ impl PtyBackend {
             pixel_height: 0,
         })?;
 
-        let candidate_shells = ShellResolver::resolve_shell(shell);
-        let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+        // 1. Resolve candidate shells with active health check
+        let candidate_results = ShellResolver::resolve_with_health_check(shell);
+        let normalized_env = EnvironmentBuilder::build_shell_environment(None);
+
+        let mut last_error: Option<String> = None;
         let mut spawned = false;
 
-        // Try spawning candidate shells in priority order
-        for candidate in &candidate_shells {
+        // Try launching verified healthy shells in priority order
+        for (candidate, health) in &candidate_results {
+            if !health.is_healthy() {
+                continue;
+            }
+
             let mut cmd = CommandBuilder::new(&candidate.path);
+
+            // Apply shell-specific arguments (-NoLogo, -NoProfile, etc.)
+            for arg in &candidate.default_args {
+                cmd.arg(arg);
+            }
 
             if let Some(ref dir) = cwd {
                 cmd.cwd(dir);
             }
 
-            // Inherit full environment variables
-            for (k, v) in std::env::vars() {
+            // Apply normalized environment
+            for (k, v) in &normalized_env {
                 cmd.env(k, v);
-            }
-
-            // Injects essential Windows environment variables to prevent 0xc0000142 (STATUS_DLL_INIT_FAILED)
-            #[cfg(windows)]
-            {
-                crate::shell::windows::ensure_essential_windows_env(&mut |k, v| {
-                    cmd.env(k, v);
-                });
             }
 
             match pair.slave.spawn_command(cmd) {
@@ -60,35 +64,32 @@ impl PtyBackend {
                     break;
                 }
                 Err(e) => {
-                    last_error = Some(e.to_string().into());
+                    last_error = Some(format!("{}: {}", candidate.name, e));
                 }
             }
         }
 
+        // 2. If no healthy shell spawned, try best available shell
         if !spawned {
-            // Ultimate fallback
-            let (fallback_name, fallback_path) = ShellResolver::get_default_shell(shell);
-            let mut cmd = CommandBuilder::new(&fallback_path);
+            let fallback_shell = ShellResolver::get_best_shell(shell);
+            let mut cmd = CommandBuilder::new(&fallback_shell.path);
+
+            for arg in &fallback_shell.default_args {
+                cmd.arg(arg);
+            }
+
             if let Some(ref dir) = cwd {
                 cmd.cwd(dir);
             }
 
-            for (k, v) in std::env::vars() {
+            for (k, v) in &normalized_env {
                 cmd.env(k, v);
-            }
-
-            #[cfg(windows)]
-            {
-                crate::shell::windows::ensure_essential_windows_env(&mut |k, v| {
-                    cmd.env(k, v);
-                });
             }
 
             if let Err(e) = pair.slave.spawn_command(cmd) {
                 let err_msg = format!(
-                    "Failed to spawn any terminal shell (including {}): {}",
-                    fallback_name,
-                    last_error.map(|e| e.to_string()).unwrap_or_else(|| e.to_string())
+                    "Failed to spawn terminal shell (fallback {}): {}. Previous errors: {:?}",
+                    fallback_shell.name, e, last_error
                 );
                 return Err(err_msg.into());
             }

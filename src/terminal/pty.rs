@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::thread;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use crate::shell::ShellResolver;
 
 pub struct PtyBackend {
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
@@ -28,23 +29,60 @@ impl PtyBackend {
             pixel_height: 0,
         })?;
 
-        let shell_cmd = shell
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("SHELL").ok())
-            .unwrap_or_else(|| {
-                if cfg!(windows) {
-                    "powershell.exe".to_string()
-                } else {
-                    "/bin/bash".to_string()
-                }
-            });
+        let candidate_shells = ShellResolver::resolve_shell(shell);
+        let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+        let mut spawned = false;
 
-        let mut cmd = CommandBuilder::new(&shell_cmd);
-        if let Some(dir) = cwd {
-            cmd.cwd(dir);
+        // Try spawning candidate shells in priority order
+        for candidate in &candidate_shells {
+            let mut cmd = CommandBuilder::new(&candidate.path);
+
+            if let Some(ref dir) = cwd {
+                cmd.cwd(dir);
+            }
+
+            // Injects essential Windows environment variables to prevent 0xc0000142 (STATUS_DLL_INIT_FAILED)
+            #[cfg(windows)]
+            {
+                crate::shell::windows::ensure_essential_windows_env(&mut |k, v| {
+                    cmd.env(k, v);
+                });
+            }
+
+            match pair.slave.spawn_command(cmd) {
+                Ok(_) => {
+                    spawned = true;
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e.to_string().into());
+                }
+            }
         }
 
-        let _child = pair.slave.spawn_command(cmd)?;
+        if !spawned {
+            // Ultimate fallback
+            let (fallback_name, fallback_path) = ShellResolver::get_default_shell(shell);
+            let mut cmd = CommandBuilder::new(&fallback_path);
+            if let Some(ref dir) = cwd {
+                cmd.cwd(dir);
+            }
+            #[cfg(windows)]
+            {
+                crate::shell::windows::ensure_essential_windows_env(&mut |k, v| {
+                    cmd.env(k, v);
+                });
+            }
+
+            if let Err(e) = pair.slave.spawn_command(cmd) {
+                let err_msg = format!(
+                    "Failed to spawn any terminal shell (including {}): {}",
+                    fallback_name,
+                    last_error.map(|e| e.to_string()).unwrap_or_else(|| e.to_string())
+                );
+                return Err(err_msg.into());
+            }
+        }
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;

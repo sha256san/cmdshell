@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to **PredictTerm** will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Unreleased]
+
+### Added
+- **Windows Shell Resolver (`src/shell/`)**:
+  - Implemented secure Windows shell resolution with absolute path discovery (`pwsh.exe`, `powershell.exe`, `cmd.exe`, `bash.exe`).
+  - Added essential Windows environment variable enforcement (`SystemRoot`, `WINDIR`, `SystemDrive`, `ComSpec`, `PATH`) to prevent `0xc0000142` (`STATUS_DLL_INIT_FAILED`) DLL initialization crashes.
+  - Added multi-tier automatic fallback when primary shell cannot be spawned.
+- **Enhanced Diagnostics (`predictterm doctor`)**:
+  - Added diagnostic checks for Windows environment variables and available shell binaries.
+
+---
+
+## [0.1.0] - 2026-08-19
+
+### Added
+- **Terminal Core Engine**:
+  - Hardware-accelerated terminal cell and grid data structures with scrollback ring buffer.
+  - ANSI / VT100 / Xterm escape sequence parser (`vte`) with 24-bit TrueColor and SGR styles.
+  - PTY process manager (`portable-pty`) with asynchronous reader thread.
+- **Prediction Engine & Candidate Providers**:
+  - Multi-factor ranking engine with prefix match and fuzzy scoring.
+  - Contextual candidate providers: `CommandProvider`, `HistoryProvider`, `GitProvider`, `ProjectProvider`, `FilesystemProvider`, `OptionProvider`, and `AiProvider`.
+  - Inline **Ghost Text** preview for rapid completion with `Tab`.
+- **Database & Security**:
+  - Embedded SQLite database (`rusqlite`) for tracking command history and usage statistics.
+  - Dangerous command interception filter (`rm -rf /`, `git reset --hard`, fork bombs, `mkfs`).
+  - Secret sanitizer automatically redacting API keys and tokens from history storage.
+- **UI & Presentation Models**:
+  - Presentation models for Window, TabBar, TerminalGrid, Suggestions popup, Status bar, and Confirmation dialogs.
+  - Curated themes (*Tokyo Night*, *Catppuccin Mocha*).
+- **CLI Subcommands**:
+  - `predictterm run`, `predictterm doctor`, `predictterm config`, `predictterm history`, `predictterm stats`.
+- **Multi-Platform CI/CD**:
+  - GitHub Actions matrix workflow compiling Linux, Windows, and macOS (Intel & Apple Silicon) binaries and publishing release assets.

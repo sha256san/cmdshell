@@ -4,5 +4,6 @@ pub mod database;
 pub mod predictor;
 pub mod providers;
 pub mod safety;
+pub mod shell;
 pub mod terminal;
 pub mod ui;

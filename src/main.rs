@@ -85,8 +85,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Err(e) => println!("• SQLite Engine: ❌ Error ({})", e),
             }
 
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-            println!("• Default Shell: {} ({})", shell, if std::path::Path::new(&shell).exists() { "✅ Found" } else { "❌ Missing" });
+            let (active_shell_name, active_shell_path) = predictterm::shell::ShellResolver::get_default_shell(config.terminal.shell.as_deref());
+            println!("• Default Shell: {} ({})", active_shell_name, active_shell_path.display());
+            println!("• Available Shells:");
+            for sh in predictterm::shell::ShellResolver::resolve_shell(config.terminal.shell.as_deref()) {
+                println!("  - {}: {} ({})", sh.name, sh.path.display(), if sh.is_available { "✅ Ready" } else { "❌ Missing" });
+            }
 
             let git_check = std::process::Command::new("git").arg("--version").output();
             match git_check {

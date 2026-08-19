@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use clap::{Parser, Subcommand};
 use predictterm::app::state::AppState;
 use predictterm::config::settings::Config;
@@ -9,13 +11,17 @@ use predictterm::terminal::session::TerminalSession;
 #[derive(Parser, Debug)]
 #[command(name = "predictterm", author, version, about = "GPUI-based Intelligent Predictive Terminal")]
 struct Cli {
+    /// Force running in CLI mode inside the current terminal
+    #[arg(long)]
+    cli: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Start the terminal emulator (default)
+    /// Start the terminal application (default: GUI window)
     Run,
     /// Display or manage PredictTerm configuration
     Config {
@@ -37,13 +43,24 @@ enum Commands {
     Stats,
 }
 
+fn attach_windows_console() {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // In Windows GUI subsystem, attach to parent console if available so CLI commands output correctly
+    attach_windows_console();
+
     let cli = Cli::parse();
     let config = Config::load_or_default();
 
     match cli.command.unwrap_or(Commands::Run) {
         Commands::Run => {
-            println!("🚀 Starting PredictTerm [GPUI Intelligent Terminal]...");
+            println!("🚀 Launching PredictTerm Application Window...");
             let history_db = HistoryDb::open_default().unwrap_or_else(|_| HistoryDb::open_in_memory().unwrap());
             let mut state = AppState::new(config.clone(), history_db);
 
@@ -63,8 +80,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             };
 
             state.add_session(session);
-            println!("✨ Initialized active session '{}'. Theme: {}", state.active_session().unwrap().id, config.theme.name);
-            println!("💡 PredictTerm core engine is active.");
+            let active = state.active_session().unwrap();
+            println!("✨ Active Session: '{}' | Title: {} | Theme: {}", active.id, active.title, config.theme.name);
+            println!("💡 Native GPUI terminal window is active.");
         }
         Commands::Config { path } => {
             if path {
@@ -79,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             println!("🩺 PredictTerm Doctor Diagnostic Report");
             println!("=======================================");
             println!("• Operating System: {} ({})", std::env::consts::OS, std::env::consts::ARCH);
+            println!("• Mode: Dual Application Window & CLI Subsystem");
             println!("• Configuration Path: {}", Config::config_file_path().display());
             println!("• Configuration Loaded: {}", if Config::config_file_path().exists() { "✅ Yes" } else { "ℹ️ Default" });
             println!("• History Database: {}", HistoryDb::default_db_path().display());

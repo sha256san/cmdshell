@@ -1,6 +1,6 @@
 [package]
 name = "predictterm"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["PredictTerm Team"]
 description = "GPUI-based Intelligent Predictive Terminal"
@@ -36,6 +36,9 @@ regex = "1.10"
 
 # Optional GPUI (enabled for GUI target)
 gpui = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
 
 [features]
 default = []

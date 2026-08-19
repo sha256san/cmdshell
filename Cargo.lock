@@ -4076,7 +4076,7 @@ dependencies = [
 
 [[package]]
 name = "predictterm"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bitflags 2.13.1",
  "chrono",
@@ -4095,6 +4095,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "vte",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

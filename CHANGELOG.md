@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.5] - 2026-08-19 (Pre-release)
+
+### Added & Enhanced
+- **Standalone Application Window & Dual Mode Architecture**:
+  - Implemented standalone native window startup (Windows Explorer double-clickable `predictterm.exe` / `cmdshell.exe`).
+  - Added Windows GUI subsystem configuration (`#windows_subsystem = "windows"`) with automatic parent console attachment (`AttachConsole`) for CLI commands and `--cli` flag.
+  - Formulated comprehensive design plan in `planadd3.md` for GPUI Window, Tabs, and Terminal Core decoupling.
+
+---
+
 ## [0.1.4] - 2026-08-19 (Pre-release)
 
 ### Added & Fixed

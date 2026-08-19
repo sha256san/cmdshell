@@ -1077,3 +1077,1464 @@ PowerShell 5.1
 のような自動fallbackを実装する。
 
 これを `cmdshell v0.1.4` のWindows Shell起動基盤として実装する。
+
+# cmdshell アプリケーションウィンドウ化 追加計画書
+
+## 1. 目的
+
+`cmdshell` を現在の「ターミナルから起動して使用するCLIツール」から、**Windows上で独立したアプリケーションウィンドウとして起動するターミナルアプリケーション**へ変更する。
+
+最終的には、ユーザーが
+
+```text
+cmdshell.exe
+```
+
+をダブルクリックするだけで、
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ cmdshell                                      ─ □ ×       │
+├─────────────────────────────────────────────────────────────┤
+│  PowerShell                                                 │
+├─────────────────────────────────────────────────────────────┤
+│ PS C:\Users\User> git sta▌                                  │
+│                                                             │
+│                                                             │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+のような独立したGUIアプリケーションを起動できる状態を目標とする。
+
+---
+
+# 2. 現在の問題
+
+現在の `cmdshell` はターミナルプロセスから起動することを前提としている。
+
+概念的には、
+
+```text
+cmd.exe / PowerShell
+        ↓
+    cmdshell
+        ↓
+       PTY
+        ↓
+   PowerShell
+```
+
+となっている。
+
+この構造では、
+
+* cmdshell自身のコンソールウィンドウが存在する
+* GUIとしてのウィンドウ管理ができない
+* メニューバーを持たせにくい
+* タブ機能を実装しにくい
+* 設定画面を作りにくい
+* ウィンドウサイズとPTYサイズの同期が複雑
+* Windowsアプリケーションとしての配布性が低い
+
+という問題がある。
+
+---
+
+# 3. 新しいアーキテクチャ
+
+アプリケーションウィンドウ化後は以下の構造にする。
+
+```text
+cmdshell.exe
+      │
+      ▼
+┌───────────────────┐
+│ Application       │
+│                   │
+│ ┌───────────────┐ │
+│ │ Terminal UI   │ │
+│ └───────┬───────┘ │
+└─────────┼─────────┘
+          │
+          ▼
+      Terminal Core
+          │
+          ▼
+        PTY
+          │
+          ▼
+     Shell Process
+          │
+     ┌────┴─────┐
+     ▼          ▼
+ PowerShell     CMD
+```
+
+重要なのは、
+
+```text
+GUI
+Terminal Core
+PTY
+Shell
+```
+
+を分離することである。
+
+---
+
+# 4. GUIフレームワーク
+
+GUI部分には **GPUI** を使用する。
+
+既存のプロジェクト方針として、ターミナル描画をGPUアクセラレーション可能なGUIで実装する。
+
+構成:
+
+```text
+GPUI
+  │
+  ├── Window
+  ├── Terminal View
+  ├── Tab Bar
+  ├── Command Input
+  ├── Suggestion Popup
+  └── Settings
+```
+
+---
+
+# 5. アプリケーション起動方式
+
+## 5.1 Windows
+
+最終的には、
+
+```text
+cmdshell.exe
+```
+
+をExplorerからダブルクリックするだけでGUIを起動する。
+
+理想的にはコンソールウィンドウを表示しない。
+
+RustのWindowsビルドではGUI subsystemを利用する。
+
+Cargo設定・Windows linker設定を適切に行い、
+
+```text
+SUBSYSTEM:WINDOWS
+```
+
+となる構成を検討する。
+
+---
+
+# 6. CLIモードも維持する
+
+GUI化してもCLI機能を完全に削除しない。
+
+以下の2モードを提供する。
+
+```text
+GUI Mode
+cmdshell.exe
+
+CLI Mode
+cmdshell.exe --cli
+```
+
+または、
+
+```text
+cmdshell.exe --help
+cmdshell.exe doctor
+cmdshell.exe --version
+```
+
+などの管理系コマンドを提供する。
+
+---
+
+# 7. GUIとCLIの責務
+
+## GUI
+
+GUIは以下を担当する。
+
+* ウィンドウ
+* 描画
+* キーボード入力
+* マウス入力
+* タブ
+* メニュー
+* 設定
+* Terminal表示
+* 候補表示
+
+## CLI
+
+CLIは以下を担当する。
+
+* `doctor`
+* `version`
+* 設定確認
+* デバッグ
+* 診断
+* ログ出力
+
+## Terminal Core
+
+GUIとCLIの間に共通のTerminal Coreを置く。
+
+```text
+GUI
+ │
+ ├──────┐
+ │      │
+ ▼      ▼
+Terminal Core
+ │
+ ▼
+PTY
+ │
+ ▼
+Shell
+```
+
+これによりGUI専用のターミナルロジックにならないようにする。
+
+---
+
+# 8. Terminal Core
+
+Terminal Coreでは以下を管理する。
+
+```text
+TerminalSession
+TerminalBuffer
+TerminalParser
+TerminalInput
+TerminalOutput
+TerminalSize
+TerminalCursor
+TerminalSelection
+```
+
+---
+
+# 9. TerminalSession
+
+```rust
+pub struct TerminalSession {
+    shell: ShellInfo,
+    pty: PtySession,
+    buffer: TerminalBuffer,
+    cursor: CursorState,
+}
+```
+
+責務:
+
+* Shell起動
+* PTY管理
+* 入力送信
+* 出力受信
+* サイズ変更
+* Shell終了検出
+
+---
+
+# 10. TerminalBuffer
+
+GUIとShellを完全に分離するため、ターミナルの状態をバッファとして保持する。
+
+```text
+TerminalBuffer
+├── rows
+├── columns
+├── cells
+├── cursor
+├── selection
+└── scrollback
+```
+
+各Cellは最低限、
+
+```text
+character
+foreground
+background
+attributes
+```
+
+を持つ。
+
+---
+
+# 11. ANSI / VTエスケープシーケンス
+
+PowerShellやCMDは単なる文字列ではなく、ANSI/VTシーケンスを出力する。
+
+そのため、
+
+```text
+Shell Output
+     ↓
+VT Parser
+     ↓
+Terminal State
+     ↓
+GPUI Renderer
+```
+
+とする。
+
+対応対象:
+
+* ANSI color
+* cursor movement
+* cursor visibility
+* clear screen
+* clear line
+* scroll
+* bold
+* underline
+* inverse
+* 256 colors
+* true color
+* alternate screen
+
+---
+
+# 12. GPUI描画
+
+GPUIではTerminalBufferを直接描画する。
+
+```text
+TerminalBuffer
+      ↓
+Visible Rows
+      ↓
+Visible Cells
+      ↓
+Text Rendering
+      ↓
+GPU
+      ↓
+Window
+```
+
+大量の文字を1文字ずつ独立したUIコンポーネントとして生成しない。
+
+代わりに、
+
+```text
+Terminal Grid
+```
+
+として効率的に描画する。
+
+---
+
+# 13. フォント
+
+初期フォント:
+
+```text
+Cascadia Mono
+Consolas
+JetBrains Mono
+```
+
+などを候補とする。
+
+ユーザーが設定画面から変更できるようにする。
+
+必要な設定:
+
+```text
+Font Family
+Font Size
+Line Height
+Letter Spacing
+```
+
+---
+
+# 14. ウィンドウ構成
+
+基本UI:
+
+```text
+┌────────────────────────────────────────────────────┐
+│ cmdshell                              ─ □ ×       │
+├────────────────────────────────────────────────────┤
+│ + │ PowerShell                         ×           │
+├────────────────────────────────────────────────────┤
+│                                                    │
+│ PS C:\Users\User> git status                       │
+│                                                    │
+│ On branch main                                     │
+│                                                    │
+│ PS C:\Users\User> ▌                               │
+│                                                    │
+├────────────────────────────────────────────────────┤
+│ PowerShell                         UTF-8   120×40 │
+└────────────────────────────────────────────────────┘
+```
+
+---
+
+# 15. タブ機能
+
+将来的には複数Shellを同一ウィンドウで管理する。
+
+```text
+┌───────────────────────────────────────────────┐
+│ + │ PowerShell │ CMD │ WSL │ Git Bash        │
+├───────────────────────────────────────────────┤
+│                                               │
+│                                               │
+└───────────────────────────────────────────────┘
+```
+
+各タブは独立した、
+
+```text
+TerminalSession
+```
+
+を持つ。
+
+---
+
+# 16. 新しいターミナル
+
+`+` ボタンから新しいShellを起動する。
+
+例:
+
+```text
+New Terminal
+├── PowerShell 7
+├── Windows PowerShell
+├── Command Prompt
+├── Git Bash
+└── WSL
+```
+
+---
+
+# 17. Shell選択
+
+デフォルト:
+
+```text
+PowerShell 7
+```
+
+PowerShell 7が存在しない場合:
+
+```text
+Windows PowerShell
+```
+
+それも失敗した場合:
+
+```text
+CMD
+```
+
+というfallbackを行う。
+
+これは `FIX_0.1.3.md` で定義したShell Health Checkと統合する。
+
+---
+
+# 18. ウィンドウサイズとPTYサイズ
+
+GUIターミナルでは非常に重要。
+
+ウィンドウサイズ:
+
+```text
+Width
+Height
+```
+
+から、
+
+```text
+Character Width
+Character Height
+```
+
+を計算する。
+
+例えば、
+
+```text
+Window
+1200 × 800 px
+
+Font
+10 × 20 px
+```
+
+なら、
+
+```text
+Columns = 120
+Rows    = 40
+```
+
+となる。
+
+ウィンドウサイズ変更時には、
+
+```text
+GPUI Window Resize
+       ↓
+Terminal Size Calculation
+       ↓
+PTY Resize
+       ↓
+Shell receives SIGWINCH / Windows equivalent
+```
+
+を行う。
+
+---
+
+# 19. キーボード入力
+
+最低限以下をサポートする。
+
+```text
+文字入力
+Enter
+Backspace
+Delete
+Tab
+Ctrl+C
+Ctrl+D
+Ctrl+Z
+Ctrl+L
+Arrow Keys
+Home
+End
+PageUp
+PageDown
+Insert
+```
+
+Windows固有:
+
+```text
+Ctrl+Shift+C
+Ctrl+Shift+V
+```
+
+をコピー・貼り付けに使用する。
+
+---
+
+# 20. マウス操作
+
+最低限:
+
+* テキスト選択
+* コピー
+* 貼り付け
+* スクロール
+* 右クリックメニュー
+
+を実装する。
+
+---
+
+# 21. スクロールバック
+
+ターミナルの過去出力を保持する。
+
+設定例:
+
+```text
+Scrollback Lines
+1000
+5000
+10000
+Unlimited
+```
+
+初期値:
+
+```text
+10000
+```
+
+を推奨する。
+
+---
+
+# 22. コマンド予測変換
+
+cmdshellの主要機能である予測変換をGUI側に統合する。
+
+入力:
+
+```text
+git st
+```
+
+候補:
+
+```text
+git status
+git stash
+git stage
+```
+
+表示:
+
+```text
+┌──────────────────────┐
+│ git status           │
+│ git stash            │
+│ git stage            │
+└──────────────────────┘
+```
+
+---
+
+# 23. 予測候補の操作
+
+```text
+↑ / ↓
+```
+
+で候補選択。
+
+```text
+Tab
+```
+
+または
+
+```text
+Right Arrow
+```
+
+で候補を確定。
+
+```text
+Esc
+```
+
+で候補を閉じる。
+
+---
+
+# 24. 予測変換とShellの分離
+
+予測エンジンはShellプロセスに直接組み込まない。
+
+```text
+Terminal Input
+      │
+      ├──────────────┐
+      ▼              ▼
+Prediction Engine   Shell
+      │              │
+      ▼              ▼
+Suggestion UI      PTY
+```
+
+とする。
+
+これにより、
+
+```text
+PowerShell
+CMD
+Bash
+WSL
+```
+
+すべてで共通の予測エンジンを利用できる。
+
+---
+
+# 25. コマンド履歴
+
+履歴を予測に利用する。
+
+例:
+
+```text
+git status
+git add .
+git commit
+cargo build
+cargo test
+docker compose up
+```
+
+頻繁に使用するコマンドほど候補上位に表示する。
+
+---
+
+# 26. 設定
+
+設定画面を追加する。
+
+```text
+Settings
+├── Appearance
+│   ├── Theme
+│   ├── Font
+│   ├── Font Size
+│   └── Cursor
+│
+├── Terminal
+│   ├── Default Shell
+│   ├── Scrollback
+│   └── Bell
+│
+├── Prediction
+│   ├── Enabled
+│   ├── History
+│   └── Suggestions
+│
+└── Advanced
+    ├── Environment
+    ├── Debug Logging
+    └── PTY
+```
+
+---
+
+# 27. テーマ
+
+初期テーマ:
+
+```text
+Dark
+Light
+```
+
+将来的には、
+
+```text
+Dracula
+Nord
+Tokyo Night
+Catppuccin
+```
+
+などを追加できる構造にする。
+
+---
+
+# 28. アプリケーションアイコン
+
+Windows Explorer上で、
+
+```text
+cmdshell.exe
+```
+
+が通常のアプリケーションとして認識されるようにする。
+
+必要:
+
+```text
+.ico
+```
+
+を用意する。
+
+アプリケーションウィンドウにもアイコンを設定する。
+
+---
+
+# 29. Windowsタスクバー
+
+GUIアプリケーション化後はタスクバーから、
+
+```text
+cmdshell
+```
+
+として起動・切り替えできるようにする。
+
+将来的には、
+
+```text
+タスクバー右クリック
+    ↓
+New Terminal
+New PowerShell
+New CMD
+```
+
+なども検討する。
+
+---
+
+# 30. CLIコンソールの非表示
+
+GUIモードでは、
+
+```text
+cmdshell.exe
+```
+
+起動時に黒いコンソールウィンドウが表示されないようにする。
+
+一方、
+
+```text
+cmdshell.exe --cli
+cmdshell.exe doctor
+```
+
+ではCLIとして実行できるようにする。
+
+WindowsではGUI subsystemとCLI subsystemの扱いに注意する。
+
+---
+
+# 31. エラーウィンドウ
+
+Shell起動失敗時にコンソールへエラーを出すのではなく、GUIダイアログを表示する。
+
+例:
+
+```text
+┌───────────────────────────────────────────┐
+│ Shell Startup Failed                     │
+├───────────────────────────────────────────┤
+│ PowerShell 7 could not be started.       │
+│                                           │
+│ Error: 0xc0000142                        │
+│ STATUS_DLL_INIT_FAILED                   │
+│                                           │
+│ [Try another shell] [Diagnostics] [OK]   │
+└───────────────────────────────────────────┘
+```
+
+---
+
+# 32. Diagnostics
+
+`Diagnostics`を押した場合、
+
+```text
+Shell
+Executable
+Environment
+PATH
+SystemRoot
+PTY
+Exit Code
+```
+
+を確認できるようにする。
+
+これを既存の `doctor` 機能と共通化する。
+
+---
+
+# 33. プロジェクト構造
+
+最終的には以下を目標とする。
+
+```text
+src/
+├── main.rs
+│
+├── app/
+│   ├── mod.rs
+│   ├── application.rs
+│   ├── window.rs
+│   └── settings.rs
+│
+├── ui/
+│   ├── mod.rs
+│   ├── terminal_view.rs
+│   ├── tab_bar.rs
+│   ├── suggestion_popup.rs
+│   ├── status_bar.rs
+│   └── dialogs.rs
+│
+├── terminal/
+│   ├── mod.rs
+│   ├── session.rs
+│   ├── pty.rs
+│   ├── buffer.rs
+│   ├── parser.rs
+│   ├── input.rs
+│   └── selection.rs
+│
+├── shell/
+│   ├── mod.rs
+│   ├── resolver.rs
+│   ├── health.rs
+│   ├── environment.rs
+│   ├── windows.rs
+│   └── unix.rs
+│
+├── prediction/
+│   ├── mod.rs
+│   ├── engine.rs
+│   ├── history.rs
+│   └── ranking.rs
+│
+└── cli/
+    ├── mod.rs
+    ├── doctor.rs
+    └── commands.rs
+```
+
+---
+
+# 34. 実装フェーズ
+
+## Phase 1 — GUI基盤
+
+* [ ] GPUI導入
+* [ ] Application作成
+* [ ] Window作成
+* [ ] WindowsでGUI起動
+* [ ] コンソールウィンドウ非表示
+* [ ] アプリケーションアイコン
+
+完成:
+
+```text
+cmdshell.exe
+    ↓
+GUI Window
+```
+
+---
+
+## Phase 2 — Terminal Core統合
+
+* [ ] PTY起動
+* [ ] Shell起動
+* [ ] stdout受信
+* [ ] stdin送信
+* [ ] TerminalBuffer
+* [ ] VT Parser
+* [ ] Cursor
+* [ ] Resize
+
+完成:
+
+```text
+GUI
+ ↓
+Terminal
+ ↓
+PowerShell
+```
+
+---
+
+## Phase 3 — Windows Shell対応
+
+* [ ] PowerShell 7
+* [ ] PowerShell 5.1
+* [ ] CMD
+* [ ] Git Bash
+* [ ] WSL
+* [ ] Shell Health Check
+* [ ] `0xc0000142` fallback
+
+---
+
+## Phase 4 — Terminal UI
+
+* [ ] ターミナル描画
+* [ ] カーソル
+* [ ] 色
+* [ ] ANSI
+* [ ] 選択
+* [ ] コピー
+* [ ] 貼り付け
+* [ ] スクロール
+* [ ] Scrollback
+
+---
+
+## Phase 5 — タブ
+
+* [ ] Tab UI
+* [ ] New Terminal
+* [ ] Close Terminal
+* [ ] TerminalSession管理
+* [ ] Shellごとの独立PTY
+
+---
+
+## Phase 6 — 予測変換
+
+* [ ] Suggestion UI
+* [ ] コマンド履歴
+* [ ] 候補ランキング
+* [ ] Tab補完
+* [ ] Shell入力との統合
+
+---
+
+## Phase 7 — 設定
+
+* [ ] Theme
+* [ ] Font
+* [ ] Font Size
+* [ ] Default Shell
+* [ ] Scrollback
+* [ ] Prediction
+* [ ] Keybindings
+
+---
+
+## Phase 8 — 診断
+
+* [ ] GUI Doctor
+* [ ] Shell診断
+* [ ] PTY診断
+* [ ] Environment診断
+* [ ] Error Dialog
+* [ ] Debug Log
+
+---
+
+# 35. パフォーマンス要件
+
+ターミナルは大量の文字を処理するため、UIのパフォーマンスを重視する。
+
+目標:
+
+```text
+通常入力:
+< 16 ms
+
+描画:
+60 FPS
+
+大量出力:
+UIフリーズしない
+
+100,000行出力:
+クラッシュしない
+
+Scrollback:
+高速スクロール可能
+```
+
+特に、
+
+```text
+cat large_file
+cargo build
+git log
+docker logs
+```
+
+などを実行した場合でもGUIが固まらないことを目標とする。
+
+---
+
+# 36. 非同期処理
+
+Shell出力をUIスレッドで直接読み込まない。
+
+```text
+PTY Reader Thread
+       ↓
+Output Channel
+       ↓
+Terminal Core
+       ↓
+GPUI Event
+       ↓
+UI Update
+```
+
+とする。
+
+UIスレッドをブロックしないこと。
+
+---
+
+# 37. 大量出力対策
+
+大量の出力を一度にUIへ渡さない。
+
+例えば、
+
+```text
+PTY
+ ↓
+Output Buffer
+ ↓
+Batch
+ ↓
+Terminal Parser
+ ↓
+UI
+```
+
+とする。
+
+1回のイベントで大量の文字列を処理してUIが固まることを防ぐ。
+
+---
+
+# 38. 入力遅延対策
+
+ユーザーが入力した文字は、
+
+```text
+Keyboard
+ ↓
+Prediction
+ ↓
+Terminal Input
+```
+
+を高速に処理する。
+
+予測処理が重い場合は非同期化する。
+
+```text
+Input
+ ├── Shell
+ └── Prediction Worker
+```
+
+とする。
+
+---
+
+# 39. クラッシュ対策
+
+ShellがクラッシュしてもGUI全体は終了させない。
+
+```text
+PowerShell
+   ↓
+Crash
+   ↓
+TerminalSession終了
+   ↓
+GUIは維持
+   ↓
+[Restart Shell]
+```
+
+とする。
+
+---
+
+# 40. Shell終了後のUI
+
+Shell終了時:
+
+```text
+┌──────────────────────────────────────────┐
+│ PowerShell                               │
+├──────────────────────────────────────────┤
+│                                          │
+│ PS C:\Users\User> exit                   │
+│                                          │
+│ [Shell exited]                           │
+│                                          │
+│ [Restart]                                │
+└──────────────────────────────────────────┘
+```
+
+---
+
+# 41. GUIショートカット
+
+推奨:
+
+| ショートカット          | 機能       |
+| ---------------- | -------- |
+| `Ctrl+Shift+T`   | 新しいタブ    |
+| `Ctrl+Shift+W`   | タブを閉じる   |
+| `Ctrl+Tab`       | 次のタブ     |
+| `Ctrl+Shift+Tab` | 前のタブ     |
+| `Ctrl+Shift+C`   | コピー      |
+| `Ctrl+Shift+V`   | 貼り付け     |
+| `Ctrl+,`         | 設定       |
+| `Ctrl+Shift+P`   | コマンドパレット |
+| `Ctrl+L`         | 入力行クリア   |
+
+---
+
+# 42. コマンドパレット
+
+将来的に、
+
+```text
+Ctrl+Shift+P
+```
+
+でコマンドパレットを表示する。
+
+例:
+
+```text
+┌──────────────────────────────────────┐
+│ > new terminal                       │
+├──────────────────────────────────────┤
+│ New PowerShell                       │
+│ New CMD                              │
+│ New WSL                              │
+│ Open Settings                        │
+│ Toggle Prediction                    │
+│ Clear Terminal                       │
+└──────────────────────────────────────┘
+```
+
+---
+
+# 43. 将来的な拡張
+
+アプリケーションウィンドウ化を基盤として、将来的に以下を実装できる。
+
+* [ ] 複数タブ
+* [ ] Split Pane
+* [ ] 複数ウィンドウ
+* [ ] コマンドパレット
+* [ ] 高度な予測変換
+* [ ] コマンド履歴検索
+* [ ] AIによるコマンド候補
+* [ ] SSH接続
+* [ ] SFTP
+* [ ] Dockerコンテナ接続
+* [ ] WSL統合
+* [ ] リモートターミナル
+* [ ] テーマ
+* [ ] プラグイン
+* [ ] 設定同期
+
+---
+
+# 44. v0.2.0の目標
+
+アプリケーションウィンドウ化を大きな機能として、
+
+```text
+v0.1.x
+│
+├── CLI
+├── PTY
+└── Shell
+       ↓
+v0.2.0
+│
+├── GPUI
+├── Application Window
+├── Terminal UI
+├── Shell
+├── PTY
+├── Prediction
+└── Tabs
+```
+
+を目標とする。
+
+---
+
+# 45. 完成イメージ
+
+最終的なWindows版cmdshellは、
+
+```text
+                    cmdshell.exe
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │     cmdshell        │
+              ├─────────────────────┤
+              │ + │ PowerShell │ ×  │
+              ├─────────────────────┤
+              │                     │
+              │ PS C:\Users\User>   │
+              │ git st              │
+              │                     │
+              │ ┌─────────────────┐ │
+              │ │ git status      │ │
+              │ │ git stash       │ │
+              │ │ git stage       │ │
+              │ └─────────────────┘ │
+              │                     │
+              ├─────────────────────┤
+              │ PowerShell │ 120×40 │
+              └─────────────────────┘
+```
+
+という、通常のWindowsアプリケーションとして利用できるターミナルを目指す。
+
+---
+
+# 46. 最重要設計原則
+
+この変更では、GUIコードとTerminal Coreを混在させない。
+
+```text
+❌ 悪い構造
+
+GPUI
+ └── PTY
+      └── PowerShell
+```
+
+ではなく、
+
+```text
+推奨:
+
+┌───────────────┐
+│      UI       │
+│     GPUI      │
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│ Terminal Core │
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│      PTY      │
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│     Shell     │
+└───────────────┘
+```
+
+とする。
+
+この構造にすることで、将来的にWindowsだけでなくLinux/macOSにもGUIターミナルを展開できる。
+
+---
+
+# 47. 実装順序
+
+実装は以下の順番を推奨する。
+
+```text
+1. GPUI Application
+        ↓
+2. Window
+        ↓
+3. TerminalBuffer
+        ↓
+4. VT Parser
+        ↓
+5. PTY
+        ↓
+6. PowerShell
+        ↓
+7. Keyboard Input
+        ↓
+8. Resize
+        ↓
+9. Selection / Copy / Paste
+        ↓
+10. Prediction UI
+        ↓
+11. Tabs
+        ↓
+12. Settings
+        ↓
+13. Doctor
+        ↓
+14. Packaging
+```
+
+---
+
+# 48. v0.2.0 完成条件
+
+以下をすべて満たした時点でGUI版の初期完成とする。
+
+```text
+[ ] cmdshell.exeをダブルクリックして起動できる
+[ ] コンソールウィンドウが表示されない
+[ ] GPUIウィンドウが表示される
+[ ] PowerShell 7を起動できる
+[ ] PowerShell 5.1を起動できる
+[ ] CMDを起動できる
+[ ] PTYが正常に動作する
+[ ] ANSIカラーが表示される
+[ ] カーソルが表示される
+[ ] キーボード入力ができる
+[ ] Ctrl+Cが動作する
+[ ] ウィンドウリサイズにPTYが追従する
+[ ] テキスト選択ができる
+[ ] コピーできる
+[ ] 貼り付けできる
+[ ] スクロールできる
+[ ] Scrollbackが動作する
+[ ] コマンド予測が表示される
+[ ] Tab補完が動作する
+[ ] 複数タブを開ける
+[ ] Shell終了後にGUIがクラッシュしない
+[ ] Shell起動失敗時にfallbackする
+[ ] 0xc0000142を検出できる
+[ ] DoctorからShell状態を確認できる
+[ ] Windows用Release Buildが作成できる
+[ ] Explorerから直接起動できる
+```
+
+---
+
+# 49. 最終目標
+
+`cmdshell` は単なるCLIツールではなく、
+
+> **Rust + GPUIで構築された、予測変換機能を持つネイティブターミナルアプリケーション**
+
+を目指す。
+
+中心となる設計は、
+
+```text
+                 cmdshell
+                     │
+          ┌──────────┴──────────┐
+          │                     │
+       GUI Mode              CLI Mode
+          │                     │
+        GPUI                 Commands
+          │                     │
+          └──────────┬──────────┘
+                     │
+              Terminal Core
+                     │
+                    PTY
+                     │
+              Shell Resolver
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+    PowerShell      CMD          WSL
+```
+
+とする。
+
+既存の `0xc0000142` 修正計画はこのTerminal Core / Shell Resolver層に組み込み、GUI化によって別実装を作るのではなく、**同じTerminal CoreをGUIから利用する設計**にする。
+
+これにより、v0.1.3の不具合修正とv0.2.0のGUI化を別々のコードとして実装するのではなく、今後のcmdshellの基盤として統合できる。

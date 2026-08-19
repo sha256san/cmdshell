@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.3] - 2026-08-19 (Pre-release)
+
+### Added
+- **Command-line Installer (`install.sh`)**:
+  - Added one-line installer script for Linux & macOS via `curl`/`wget`.
+  - Automatically detects OS and architecture (`x86_64`, `arm64`), downloads the latest release binary, and installs to `~/.local/bin`.
+  - Updated `README.md` with installation guides for Linux, macOS, and Windows.
+
+### Fixed
+- **Windows Shell Spawning & Environment Inheritance**:
+  - Prioritized native `cmd.exe` as the default Windows shell to prevent `0xc0000142` (`STATUS_DLL_INIT_FAILED`) CLR initialization errors.
+  - Ensured complete environment variable inheritance from `std::env::vars()` into ConPTY subprocesses.
+
+---
+
 ## [0.1.2] - 2026-08-19 (Pre-release)
 
 ### Fixed

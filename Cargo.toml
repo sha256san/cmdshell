@@ -1,6 +1,6 @@
 [package]
 name = "predictterm"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["PredictTerm Team"]
 description = "GPUI-based Intelligent Predictive Terminal"

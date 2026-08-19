@@ -22,25 +22,62 @@
 
 ---
 
-## 🚀 Quick Start
+## 📥 Installation
 
-### Build & Test
+### 🐧 Linux & 🍎 macOS (One-line Quick Install)
+
+Install PredictTerm instantly via curl or wget:
 
 ```bash
-# Run all unit and integration test suites
+# Using curl
+curl -fsSL https://raw.githubusercontent.com/sha256san/cmdshell/main/install.sh | bash
+
+# Or using wget
+wget -qO- https://raw.githubusercontent.com/sha256san/cmdshell/main/install.sh | bash
+```
+
+### 🪟 Windows
+
+1. Download `predictterm-windows-x86_64.zip` from the [Latest Releases](https://github.com/sha256san/cmdshell/releases).
+2. Extract the archive and add the directory to your system `PATH` (or double-click `predictterm.exe`).
+
+### 🦀 Using Cargo
+
+```bash
+cargo install --git https://github.com/sha256san/cmdshell.git
+```
+
+---
+
+## 🚀 Quick Start
+
+### Basic Commands
+
+```bash
+# Launch the terminal
+predictterm run
+
+# Run environment health check and shell diagnosis
+predictterm doctor
+
+# Inspect active configuration
+predictterm config
+
+# View command usage statistics
+predictterm stats
+
+# Inspect command history
+predictterm history
+```
+
+### Development & Testing
+
+```bash
+# Run all automated unit and integration test suites
 cargo test
 
-# Launch the terminal
+# Launch in dev mode
 cargo run -- run
-
-# Run environment health check
-cargo run -- doctor
-
-# Inspect configuration
-cargo run -- config
-
-# View command statistics
-cargo run -- stats
 ```
 
 ---
@@ -50,6 +87,7 @@ cargo run -- stats
 ```text
 predictterm/
 ├── Cargo.toml
+├── install.sh               # One-line installer for Linux & macOS
 ├── src/
 │   ├── main.rs              # CLI entrypoint & subcommands
 │   ├── lib.rs               # Library root exposing all subsystems
@@ -59,12 +97,14 @@ predictterm/
 │   ├── predictor/           # Context builder, ranking engine, cache
 │   ├── providers/           # Prediction candidate providers
 │   ├── safety/              # Dangerous command detector & secret sanitizer
+│   ├── shell/               # Windows & Unix shell resolver & environment manager
 │   ├── terminal/            # PTY backend, ANSI/VT parser, grid & cell model
 │   └── ui/                  # UI view models, ghost text, suggestions, dialogs
 └── tests/
     ├── ansi_tests.rs
     ├── predictor_tests.rs
     ├── safety_tests.rs
+    ├── shell_tests.rs
     └── terminal_tests.rs
 ```
 

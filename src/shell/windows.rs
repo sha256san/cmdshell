@@ -19,12 +19,17 @@ pub fn discover_windows_shells() -> Vec<ShellInfo> {
     let program_files = get_program_files();
 
     let candidates = vec![
-        // 1. PowerShell 7+ (modern, cross-platform pwsh)
+        // 1. Command Prompt (cmd.exe) - Native Win32 C binary, zero .NET CLR dependency, immune to 0xc0000142
+        (
+            "Command Prompt (cmd.exe)",
+            system_root.join("System32").join("cmd.exe"),
+        ),
+        // 2. PowerShell 7+ (pwsh.exe) - Modern cross-platform .NET runtime
         (
             "PowerShell 7 (pwsh.exe)",
             program_files.join("PowerShell").join("7").join("pwsh.exe"),
         ),
-        // 2. Windows PowerShell 5.1 (standard built-in)
+        // 3. Windows PowerShell 5.1 (powershell.exe)
         (
             "Windows PowerShell (powershell.exe)",
             system_root
@@ -32,11 +37,6 @@ pub fn discover_windows_shells() -> Vec<ShellInfo> {
                 .join("WindowsPowerShell")
                 .join("v1.0")
                 .join("powershell.exe"),
-        ),
-        // 3. Command Prompt (cmd.exe - most resilient, zero external DLL dependencies)
-        (
-            "Command Prompt (cmd.exe)",
-            system_root.join("System32").join("cmd.exe"),
         ),
         // 4. Git Bash
         (
@@ -65,14 +65,18 @@ pub fn discover_windows_shells() -> Vec<ShellInfo> {
 
 /// Injects critical environment variables required by Windows DLLs to avoid 0xc0000142.
 pub fn ensure_essential_windows_env(env_setter: &mut dyn FnMut(&str, &str)) {
+    // 1. Inherit all current process environment variables
+    for (k, v) in std::env::vars() {
+        env_setter(&k, &v);
+    }
+
     let system_root = get_system_root();
     let sys_root_str = system_root.to_string_lossy();
 
-    // 1. SystemRoot & WINDIR
+    // 2. Guarantee critical Windows subsystem paths
     env_setter("SystemRoot", &sys_root_str);
     env_setter("WINDIR", &sys_root_str);
 
-    // 2. SystemDrive
     let drive = std::env::var("SystemDrive").unwrap_or_else(|_| {
         system_root
             .components()
@@ -83,7 +87,6 @@ pub fn ensure_essential_windows_env(env_setter: &mut dyn FnMut(&str, &str)) {
     });
     env_setter("SystemDrive", &drive);
 
-    // 3. ComSpec
     let comspec = std::env::var("ComSpec").unwrap_or_else(|_| {
         system_root
             .join("System32")
@@ -93,7 +96,6 @@ pub fn ensure_essential_windows_env(env_setter: &mut dyn FnMut(&str, &str)) {
     });
     env_setter("ComSpec", &comspec);
 
-    // 4. PATH sanity check
     let path = std::env::var("PATH").unwrap_or_else(|_| {
         format!(
             "{}\\System32;{}\\System32\\WindowsPowerShell\\v1.0;{}",

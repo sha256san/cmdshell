@@ -23,8 +23,8 @@ impl PtyBackend {
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
-            rows,
-            cols,
+            rows: rows.max(1),
+            cols: cols.max(1),
             pixel_width: 0,
             pixel_height: 0,
         })?;
@@ -39,6 +39,11 @@ impl PtyBackend {
 
             if let Some(ref dir) = cwd {
                 cmd.cwd(dir);
+            }
+
+            // Inherit full environment variables
+            for (k, v) in std::env::vars() {
+                cmd.env(k, v);
             }
 
             // Injects essential Windows environment variables to prevent 0xc0000142 (STATUS_DLL_INIT_FAILED)
@@ -67,6 +72,11 @@ impl PtyBackend {
             if let Some(ref dir) = cwd {
                 cmd.cwd(dir);
             }
+
+            for (k, v) in std::env::vars() {
+                cmd.env(k, v);
+            }
+
             #[cfg(windows)]
             {
                 crate::shell::windows::ensure_essential_windows_env(&mut |k, v| {
@@ -131,8 +141,8 @@ impl PtyBackend {
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let master = self.master.lock();
         master.resize(PtySize {
-            rows,
-            cols,
+            rows: rows.max(1),
+            cols: cols.max(1),
             pixel_width: 0,
             pixel_height: 0,
         })?;

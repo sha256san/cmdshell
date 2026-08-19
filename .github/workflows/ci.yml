@@ -24,28 +24,24 @@ jobs:
             target: x86_64-unknown-linux-gnu
             binary_name: predictterm
             asset_name: predictterm-linux-x86_64.tar.gz
-            use_cross: false
 
           # Windows x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary_name: predictterm.exe
             asset_name: predictterm-windows-x86_64.zip
-            use_cross: false
 
-          # macOS Apple Silicon (ARM64)
+          # macOS Apple Silicon (ARM64) - Runs on Apple Silicon M-series
           - os: macos-14
             target: aarch64-apple-darwin
             binary_name: predictterm
             asset_name: predictterm-macos-arm64.tar.gz
-            use_cross: false
 
-          # macOS Intel (x86_64)
-          - os: macos-13
+          # macOS Intel (x86_64) - Fast cross-compilation on macos-14 (Apple Silicon runner)
+          - os: macos-14
             target: x86_64-apple-darwin
             binary_name: predictterm
             asset_name: predictterm-macos-x86_64.tar.gz
-            use_cross: false
 
     steps:
       - name: Checkout repository
@@ -63,7 +59,6 @@ jobs:
 
       - name: Run Test Suites
         run: cargo test --workspace --target ${{ matrix.target }}
-        if: matrix.target != 'aarch64-apple-darwin' || runner.arch == 'ARM64'
 
       - name: Build Release Binary
         run: cargo build --release --target ${{ matrix.target }}
@@ -107,11 +102,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: artifacts/*
           draft: false
           prerelease: false
           generate_release_notes: true

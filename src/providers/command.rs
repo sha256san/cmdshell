@@ -2,14 +2,14 @@ use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::sync::RwLock;
+use std::sync::OnceLock;
 use crate::predictor::candidate::{Candidate, CandidateSource};
 use crate::predictor::context::PredictionContext;
 use crate::providers::CandidateProvider;
 
-pub struct CommandProvider {
-    cached_commands: RwLock<HashSet<String>>,
-}
+static GLOBAL_COMMANDS: OnceLock<HashSet<String>> = OnceLock::new();
+
+pub struct CommandProvider;
 
 impl Default for CommandProvider {
     fn default() -> Self {
@@ -19,71 +19,75 @@ impl Default for CommandProvider {
 
 impl CommandProvider {
     pub fn new() -> Self {
-        let mut commands = HashSet::new();
+        Self
+    }
 
-        // Builtins and common utilities with descriptions
-        let common = [
-            ("cd", "Change the working directory"),
-            ("ls", "List directory contents"),
-            ("cat", "Concatenate and display files"),
-            ("grep", "Search text using patterns"),
-            ("find", "Search for files in a directory hierarchy"),
-            ("mkdir", "Create directories"),
-            ("rm", "Remove files or directories"),
-            ("cp", "Copy files and directories"),
-            ("mv", "Move or rename files and directories"),
-            ("pwd", "Print name of current working directory"),
-            ("touch", "Change file access and modification times"),
-            ("chmod", "Change file mode bits (permissions)"),
-            ("chown", "Change file owner and group"),
-            ("tar", "Archiving utility"),
-            ("curl", "Transfer data from or to a server"),
-            ("wget", "Non-interactive network downloader"),
-            ("ssh", "OpenSSH SSH client (remote login program)"),
-            ("git", "Fast scalable distributed revision control system"),
-            ("cargo", "Rust package manager and build tool"),
-            ("rustc", "The Rust compiler"),
-            ("docker", "Docker container engine runtime"),
-            ("docker-compose", "Define and run multi-container applications"),
-            ("node", "JavaScript runtime environment"),
-            ("npm", "Node package manager"),
-            ("pnpm", "Fast, disk space efficient package manager"),
-            ("yarn", "Fast, reliable, and secure dependency management"),
-            ("python", "Python programming language interpreter"),
-            ("python3", "Python 3 interpreter"),
-            ("pip", "Package installer for Python"),
-            ("uv", "Extremely fast Python package installer"),
-            ("go", "Go programming language tool"),
-            ("make", "GNU make utility to maintain groups of programs"),
-            ("cmake", "Cross-platform build system generator"),
-            ("htop", "Interactive process viewer"),
-            ("top", "Display Linux processes"),
-            ("ps", "Report a snapshot of current processes"),
-            ("kill", "Send a signal to a process"),
-            ("df", "Report file system disk space usage"),
-            ("du", "Estimate file space usage"),
-            ("clear", "Clear terminal screen"),
-            ("exit", "Cause normal process termination"),
-            ("echo", "Display a line of text"),
-            ("which", "Locate a command"),
-            ("man", "Interface to system reference manuals"),
-            ("sudo", "Execute a command as another user / root"),
-        ];
+    fn get_cached_commands() -> &'static HashSet<String> {
+        GLOBAL_COMMANDS.get_or_init(|| {
+            let mut commands = HashSet::new();
 
-        for (cmd, _) in common {
-            commands.insert(cmd.to_string());
-        }
+            // Builtins and common utilities
+            let common = [
+                ("cd", "Change the working directory"),
+                ("ls", "List directory contents"),
+                ("cat", "Concatenate and display files"),
+                ("grep", "Search text using patterns"),
+                ("find", "Search for files in a directory hierarchy"),
+                ("mkdir", "Create directories"),
+                ("rm", "Remove files or directories"),
+                ("cp", "Copy files and directories"),
+                ("mv", "Move or rename files and directories"),
+                ("pwd", "Print name of current working directory"),
+                ("touch", "Change file access and modification times"),
+                ("chmod", "Change file mode bits (permissions)"),
+                ("chown", "Change file owner and group"),
+                ("tar", "Archiving utility"),
+                ("curl", "Transfer data from or to a server"),
+                ("wget", "Non-interactive network downloader"),
+                ("ssh", "OpenSSH SSH client (remote login program)"),
+                ("git", "Fast scalable distributed revision control system"),
+                ("cargo", "Rust package manager and build tool"),
+                ("rustc", "The Rust compiler"),
+                ("docker", "Docker container engine runtime"),
+                ("docker-compose", "Define and run multi-container applications"),
+                ("node", "JavaScript runtime environment"),
+                ("npm", "Node package manager"),
+                ("pnpm", "Fast, disk space efficient package manager"),
+                ("yarn", "Fast, reliable, and secure dependency management"),
+                ("python", "Python programming language interpreter"),
+                ("python3", "Python 3 interpreter"),
+                ("pip", "Package installer for Python"),
+                ("uv", "Extremely fast Python package installer"),
+                ("go", "Go programming language tool"),
+                ("make", "GNU make utility to maintain groups of programs"),
+                ("cmake", "Cross-platform build system generator"),
+                ("htop", "Interactive process viewer"),
+                ("top", "Display Linux processes"),
+                ("ps", "Report a snapshot of current processes"),
+                ("kill", "Send a signal to a process"),
+                ("df", "Report file system disk space usage"),
+                ("du", "Estimate file space usage"),
+                ("clear", "Clear terminal screen"),
+                ("exit", "Cause normal process termination"),
+                ("echo", "Display a line of text"),
+                ("which", "Locate a command"),
+                ("man", "Interface to system reference manuals"),
+                ("sudo", "Execute a command as another user / root"),
+            ];
 
-        // Scan PATH
-        if let Some(path_var) = env::var_os("PATH") {
-            for dir in env::split_paths(&path_var) {
-                Self::scan_dir(&dir, &mut commands);
+            for (cmd, _) in common {
+                commands.insert(cmd.to_string());
             }
-        }
 
-        Self {
-            cached_commands: RwLock::new(commands),
-        }
+            // Scan PATH directories
+            if let Some(path_var) = env::var_os("PATH") {
+                for dir in env::split_paths(&path_var) {
+                    Self::scan_dir(&dir, &mut commands);
+                }
+            }
+
+            commands
+        })
     }
 
     fn scan_dir(dir: &Path, commands: &mut HashSet<String>) {
@@ -139,10 +143,10 @@ impl CandidateProvider for CommandProvider {
         }
 
         let token = context.current_token();
-        let guard = self.cached_commands.read().unwrap();
+        let commands = Self::get_cached_commands();
         let mut candidates = Vec::new();
 
-        for cmd in guard.iter() {
+        for cmd in commands.iter() {
             if token.is_empty() || cmd.starts_with(token) {
                 let mut candidate = Candidate::new(cmd.clone(), CandidateSource::Command, 50.0)
                     .with_prefix_len(token.len());

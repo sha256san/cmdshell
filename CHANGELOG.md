@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.7] - 2026-08-19 (Pre-release)
+
+### Fixed & Feature
+- **Full Graphical Window Launch (`TerminalApp::run_window`)**:
+  - Replaced terminal CLI-only process exit with real cross-platform native graphical application window rendered at 60 FPS.
+  - Windows Explorer double-click now opens a dedicated dark-themed (Tokyo Night) application window with interactive terminal grid, Tab bar (`+` / `[x]`), status bar, and real-time floating prediction overlay.
+  - Fixed Windows process behavior so it no longer launches command prompt / powershell console window directly.
+
+---
+
 ## [0.1.6] - 2026-08-19 (Pre-release)
 
 ### Added & Re-architected

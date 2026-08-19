@@ -1,27 +1,22 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use clap::{Parser, Subcommand};
-use predictterm::app::state::AppState;
+use predictterm::app::gui::TerminalApp;
 use predictterm::config::settings::Config;
 use predictterm::database::history::HistoryDb;
 use predictterm::shell::health::HealthStatus;
 use predictterm::shell::ShellResolver;
-use predictterm::terminal::session::TerminalSession;
 
 #[derive(Parser, Debug)]
-#[command(name = "predictterm", author, version, about = "GPUI-based Intelligent Predictive Terminal")]
+#[command(name = "predictterm", author, version, about = "Intelligent GPU-accelerated Terminal Application")]
 struct Cli {
-    /// Force running in CLI mode inside the current terminal
-    #[arg(long)]
-    cli: bool,
-
     #[command(subcommand)]
     command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Start the terminal application (default: GUI window)
+    /// Start the terminal application window (default)
     Run,
     /// Display or manage PredictTerm configuration
     Config {
@@ -52,39 +47,17 @@ fn attach_windows_console() {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // In Windows GUI subsystem, attach to parent console if available so CLI commands output correctly
-    attach_windows_console();
-
     let cli = Cli::parse();
     let config = Config::load_or_default();
+    let history_db = HistoryDb::open_default().unwrap_or_else(|_| HistoryDb::open_in_memory().unwrap());
 
     match cli.command.unwrap_or(Commands::Run) {
         Commands::Run => {
-            println!("🚀 Launching PredictTerm Application Window...");
-            let history_db = HistoryDb::open_default().unwrap_or_else(|_| HistoryDb::open_in_memory().unwrap());
-            let mut state = AppState::new(config.clone(), history_db);
-
-            let session = match TerminalSession::new(
-                "session-1".to_string(),
-                80,
-                24,
-                config.terminal.scrollback_lines,
-                None,
-                config.terminal.shell.as_deref(),
-            ) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("⚠️ Failed to spawn PTY shell: {}. Falling back to headless session.", e);
-                    TerminalSession::create_headless("session-1".to_string(), 80, 24, config.terminal.scrollback_lines)
-                }
-            };
-
-            state.add_session(session);
-            let active = state.active_session().unwrap();
-            println!("✨ Active Session: '{}' | Title: {} | Theme: {}", active.id, active.title, config.theme.name);
-            println!("💡 Native GPUI terminal window is active.");
+            // Launch native graphical application window
+            TerminalApp::run_window(config, history_db).map_err(|e| e.to_string())?;
         }
         Commands::Config { path } => {
+            attach_windows_console();
             if path {
                 println!("{}", Config::config_file_path().display());
             } else {
@@ -94,10 +67,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         }
         Commands::Doctor => {
+            attach_windows_console();
             println!("🩺 PredictTerm Doctor Diagnostic Report");
             println!("=======================================");
             println!("• Operating System: {} ({})", std::env::consts::OS, std::env::consts::ARCH);
-            println!("• Mode: Dual Application Window & CLI Subsystem");
+            println!("• Mode: Native Graphical Window Application");
             println!("• Configuration Path: {}", Config::config_file_path().display());
             println!("• Configuration Loaded: {}", if Config::config_file_path().exists() { "✅ Yes" } else { "ℹ️ Default" });
             println!("• History Database: {}", HistoryDb::default_db_path().display());
@@ -140,7 +114,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             println!("\nAll critical systems operational!");
         }
         Commands::History { limit, prefix, clear } => {
-            let mut db = HistoryDb::open_default().unwrap_or_else(|_| HistoryDb::open_in_memory().unwrap());
+            attach_windows_console();
+            let mut db = history_db;
             if clear {
                 let count = db.clear()?;
                 println!("🧹 Cleared {} history entries.", count);
@@ -167,8 +142,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         }
         Commands::Stats => {
-            let db = HistoryDb::open_default().unwrap_or_else(|_| HistoryDb::open_in_memory().unwrap());
-            let stats = db.get_stats()?;
+            attach_windows_console();
+            let stats = history_db.get_stats()?;
             println!("📊 PredictTerm Statistics");
             println!("=========================");
             println!("• Total Unique Commands: {}", stats.total_records);
